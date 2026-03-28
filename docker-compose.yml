@@ -1,0 +1,19 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # 发件地址（用户需要将这个地址加入 Amazon 白名单）
+      - SENDER_EMAIL=${SENDER_EMAIL}
+
+      # 选项 A：使用 Resend（推荐）
+      # 在 resend.com 免费注册，每月 3000 封
+      - RESEND_API_KEY=${RESEND_API_KEY}
+
+      # 选项 B：使用 Gmail SMTP（二选一）
+      # - SMTP_HOST=smtp.gmail.com
+      # - SMTP_PORT=587
+      # - SMTP_USER=${SMTP_USER}
+      # - SMTP_PASS=${SMTP_PASS}
+    restart: unless-stopped
