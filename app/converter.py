@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
+from bs4 import BeautifulSoup
 from ebooklib import epub
 
 from .fetcher import Article
@@ -148,23 +149,29 @@ def _make_chapter(
             book.add_item(img_item)
             cover_img_html = f'<img src="../{img_name}" alt="封面"/>'
 
-    chapter.set_content(
-        f"""<?xml version='1.0' encoding='utf-8'?>
-        <!DOCTYPE html>
-        <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh">
-        <head>
-            <title>{_escape(article.title)}</title>
-            <link rel="stylesheet" type="text/css" href="../style/kindle.css"/>
-        </head>
-        <body>
-            <section class="article">
-                {header_html}
-                {cover_img_html}
-                {article.content_html}
-            </section>
-        </body>
-        </html>"""
-    )
+    # Sanitize article HTML to valid XHTML using BeautifulSoup
+    clean_content = _sanitize_html(article.content_html)
+
+    html_content = f"""<?xml version='1.0' encoding='utf-8'?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+  <title>{_escape(article.title)}</title>
+  <link rel="stylesheet" type="text/css" href="../style/kindle.css"/>
+</head>
+<body>
+  <div class="article-header">
+    <h1>{_escape(article.title)}</h1>
+    <p class="article-meta">{_escape(article.author)}</p>
+  </div>
+  {cover_img_html}
+  <div class="article-body">{clean_content}</div>
+</body>
+</html>"""
+
+    # ebooklib requires bytes
+    chapter.content = html_content.encode("utf-8")
 
     return chapter
 
@@ -180,6 +187,25 @@ def _try_fetch_image(url: str) -> tuple[Optional[bytes], str]:
     except Exception as e:
         logger.warning(f"Failed to fetch image {url}: {e}")
         return None, ""
+
+
+def _sanitize_html(html: str) -> str:
+    """Parse HTML with BeautifulSoup and return clean body content."""
+    if not html or not html.strip():
+        return "<p>（正文为空）</p>"
+    try:
+        soup = BeautifulSoup(html, "lxml")
+        # If it's a full document, extract body
+        body = soup.find("body")
+        content = body if body else soup
+        # Remove any remaining scripts/styles
+        for tag in content.find_all(["script", "style"]):
+            tag.decompose()
+        result = str(content)
+        return result if result.strip() else "<p>（正文为空）</p>"
+    except Exception as e:
+        logger.warning(f"HTML sanitization failed: {e}")
+        return "<p>（内容解析失败）</p>"
 
 
 def _escape(text: str) -> str:
